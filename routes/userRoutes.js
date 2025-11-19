@@ -14,8 +14,8 @@ import { authMiddleware } from "../middleware/auth.js";
 const router = Router();
 
 // Public routes
-router.post("/register",authMiddleware(["staff"]), register);
-router.post("/login", authMiddleware(["staff", "admin"]), login);
+router.post("/register", register);
+router.post("/login", login);
 
 // Protected routes (example: admin only)
 router.use(authMiddleware(["admin"]));

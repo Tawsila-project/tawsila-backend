@@ -33,7 +33,7 @@ export const register = async (req, res) => {
       phone,
       address,
       password: hashedPassword, // hashed password saved
-      role,
+      role: "customer",
     });
 
     // Send response without password
