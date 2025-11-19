@@ -152,10 +152,34 @@ export const updateUser = async (req, res) => {
 // Delete User
 export const deleteUser = async (req, res) => {
   try {
-    const user = await User.findByIdAndDelete(req.params.id);
-    if (!user) return res.status(404).json({ error: "User not found" });
+    const targetUser = await User.findById(req.params.id);
+    if (!targetUser) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    // req.user comes from JWT (decoded payload)
+    const requestingUserRole = req.user.role;
+
+    // Prevent deleting admin → admin
+    if (targetUser.role === "admin") {
+      return res.status(403).json({
+        error: "Admins cannot delete other admins",
+      });
+    }
+
+    // Only admin can delete users
+    if (requestingUserRole !== "admin") {
+      return res.status(403).json({
+        error: "Only admins can delete users",
+      });
+    }
+
+    await User.findByIdAndDelete(req.params.id);
+
     res.json({ message: "User deleted successfully" });
+
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
+
