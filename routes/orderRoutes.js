@@ -1,11 +1,23 @@
-const express = require("express");
-const router = express.Router();
-const orderController = require("../controllers/orderController");
+// src/routes/orderRoutes.js
+import { Router } from "express";
+import {
+  createOrder,
+  getOrders,
+  getOrder,
+  updateOrder,
+  deleteOrder
+} from "../controllers/orderController.js";
+import { authMiddleware } from "../middleware/auth.js";
 
-router.post("/", orderController.createOrder);
-router.get("/", orderController.getOrders);
-router.get("/:id", orderController.getOrder);
-router.put("/:id", orderController.updateOrder);
-router.delete("/:id", orderController.deleteOrder);
+const router = Router();
 
-module.exports = router;
+// Protect routes (example: staff & admin can access orders)
+router.use(authMiddleware(["staff", "admin"]));
+
+router.post("/", createOrder);
+router.get("/", getOrders);
+router.get("/:id", getOrder);
+router.put("/:id", updateOrder);
+router.delete("/:id", deleteOrder);
+
+export default router;

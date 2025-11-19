@@ -1,12 +1,47 @@
-const mongoose = require("mongoose");
+// src/models/User.js
+import mongoose from "mongoose";
 
-const userSchema = new mongoose.Schema({
-  full_name: { type: String, required: true },
-  username: { type: String, required: true, unique: true },
-  phone: { type: String, required: true },
-  address: { type: String },
-  role: { type: String, enum: ["admin", "staff", "customer"], required: true },
-  availability: { type: Boolean, default: true },
+const { Schema, model } = mongoose;
+
+const userSchema = new Schema({
+  full_name: {
+    type: String,
+    required: [true, "Full name is required"],
+    trim: true,
+  },
+  username: {
+    type: String,
+    required: [true, "Username is required"],
+    unique: true,
+    trim: true,
+  },
+  phone: {
+    type: String,
+    required: [true, "Phone number is required"],
+    trim: true,
+  },
+  address: {
+    type: String,
+    trim: true,
+  },
+  role: {
+    type: String,
+    enum: ["admin", "staff", "customer"],
+    required: [true, "Role is required"],
+  },
+  availability: {
+    type: Boolean,
+    default: true,
+  },
+   password: { type: String, required: true },
 }, { timestamps: true });
 
-module.exports = mongoose.model("User", userSchema);
+// Optional: virtual property for convenience
+userSchema.virtual("isStaff").get(function () {
+  return this.role === "staff";
+});
+
+// Include virtuals in JSON output
+userSchema.set("toJSON", { virtuals: true });
+
+export default model("User", userSchema);

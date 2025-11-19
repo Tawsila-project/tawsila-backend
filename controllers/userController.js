@@ -1,19 +1,30 @@
-import User from '../models/User.js';
-import bcrypt from 'bcrypt';
-import jwt from 'jsonwebtoken';
+// src/controllers/userController.js
+import User from "../models/User.js";
+import bcrypt from "bcrypt";
+import jwt from "jsonwebtoken";
 
-// Register user
-exports.register = async (req, res) => {
+
+// ===========================
+// REGISTER
+// ===========================
+export const register = async (req, res) => {
   try {
     const { full_name, username, phone, address, password, role } = req.body;
 
-    // Check if user already exists
-    const existingUser = await User.findOne({ username });
-    if (existingUser) return res.status(400).json({ error: "Username already exists" });
+    // Validate required fields
+    if (!full_name || !username || !phone || !password || !role) {
+      return res.status(400).json({ error: "All required fields must be filled" });
+    }
 
-    // Hash the password
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
+    // Check if username already exists
+    const existingUser = await User.findOne({ username });
+    if (existingUser) {
+      return res.status(400).json({ error: "Username already exists" });
+    }
+
+    // Hash password
+    const saltRounds = Number(process.env.SALT_ROUNDS) || 10;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
 
     // Create user
     const user = await User.create({
@@ -21,29 +32,48 @@ exports.register = async (req, res) => {
       username,
       phone,
       address,
-      password: hashedPassword, // save hashed password
+      password: hashedPassword, // hashed password saved
       role,
     });
 
-    res.status(201).json({ message: "User registered successfully", user });
+    // Send response without password
+    res.status(201).json({
+      message: "User registered successfully",
+      user: {
+        _id: user._id,
+        full_name: user.full_name,
+        username: user.username,
+        phone: user.phone,
+        address: user.address,
+        role: user.role,
+        availability: user.availability,
+      },
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
 
-// Login user
-exports.login = async (req, res) => {
+
+export const login = async (req, res) => {
   try {
     const { username, password } = req.body;
 
+    // Make sure to select password explicitly if needed
     const user = await User.findOne({ username });
-    if (!user) return res.status(400).json({ error: "Invalid username or password" });
+    if (!user) {
+      return res.status(400).json({ error: "Invalid username or password" });
+    }
 
-    // Compare password with bcrypt
+    if (!user.password) {
+      return res.status(500).json({ error: "User has no password set" });
+    }
+
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return res.status(400).json({ error: "Invalid username or password" });
+    if (!isMatch) {
+      return res.status(400).json({ error: "Invalid username or password" });
+    }
 
-    // Generate JWT token
     const token = jwt.sign(
       { id: user._id, role: user.role },
       process.env.JWT_SECRET,
@@ -54,13 +84,23 @@ exports.login = async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
-};
+}
 
+// ===========================
+// CRUD OPERATIONS
+// ===========================
 
-// Create User
-exports.createUser = async (req, res) => {
+// Create User (admin use)
+export const createUser = async (req, res) => {
   try {
-    const user = await User.create(req.body);
+    const { password, ...rest } = req.body;
+    let hashedPassword = undefined;
+
+    if (password) {
+      hashedPassword = await bcrypt.hash(password, 10);
+    }
+
+    const user = await User.create({ ...rest, password: hashedPassword });
     res.status(201).json(user);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -68,9 +108,9 @@ exports.createUser = async (req, res) => {
 };
 
 // Get All Users
-exports.getUsers = async (req, res) => {
+export const getUsers = async (req, res) => {
   try {
-    const users = await User.find();
+    const users = await User.find().select("-password"); // hide password
     res.json(users);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -78,10 +118,10 @@ exports.getUsers = async (req, res) => {
 };
 
 // Get Single User
-exports.getUser = async (req, res) => {
+export const getUser = async (req, res) => {
   try {
-    const user = await User.findById(req.params.id);
-    if(!user) return res.status(404).json({ error: "User not found" });
+    const user = await User.findById(req.params.id).select("-password");
+    if (!user) return res.status(404).json({ error: "User not found" });
     res.json(user);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -89,10 +129,20 @@ exports.getUser = async (req, res) => {
 };
 
 // Update User
-exports.updateUser = async (req, res) => {
+export const updateUser = async (req, res) => {
   try {
-    const user = await User.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    if(!user) return res.status(404).json({ error: "User not found" });
+    const updateData = { ...req.body };
+
+    // If password is updated, hash it
+    if (updateData.password) {
+      updateData.password = await bcrypt.hash(updateData.password, 10);
+    }
+
+    const user = await User.findByIdAndUpdate(req.params.id, updateData, {
+      new: true,
+    }).select("-password");
+
+    if (!user) return res.status(404).json({ error: "User not found" });
     res.json(user);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -100,10 +150,10 @@ exports.updateUser = async (req, res) => {
 };
 
 // Delete User
-exports.deleteUser = async (req, res) => {
+export const deleteUser = async (req, res) => {
   try {
     const user = await User.findByIdAndDelete(req.params.id);
-    if(!user) return res.status(404).json({ error: "User not found" });
+    if (!user) return res.status(404).json({ error: "User not found" });
     res.json({ message: "User deleted successfully" });
   } catch (err) {
     res.status(500).json({ error: err.message });
