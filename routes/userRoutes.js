@@ -13,17 +13,17 @@ import { authMiddleware } from "../middleware/auth.js";
 
 const router = Router();
 
-// Public routes
-router.post("/register", register);
+// Public (for staff/admin login only)
+router.post("/register", register); 
 router.post("/login", login);
 
-// Protected routes (example: admin only)
+// Protected (admin only)
 router.use(authMiddleware(["admin"]));
 
-router.post("/",  authMiddleware(["admin"]), createUser);
-router.get("/", authMiddleware(["admin"]), getUsers);
-router.get("/:id",authMiddleware(["admin"]), getUser);
-router.put("/:id", authMiddleware(["admin"]), updateUser);
-router.delete("/:id", authMiddleware(["admin"]), deleteUser);
+router.post("/", createUser);
+router.get("/", getUsers);
+router.get("/:id", getUser);
+router.put("/:id", updateUser);
+router.delete("/:id", deleteUser);
 
 export default router;

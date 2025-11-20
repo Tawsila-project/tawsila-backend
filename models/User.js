@@ -26,15 +26,19 @@ const userSchema = new Schema({
   },
   role: {
     type: String,
-    enum: ["admin", "staff", "customer"],
+    enum: ["admin", "staff"],
     required: [true, "Role is required"],
   },
   availability: {
     type: Boolean,
     default: true,
   },
-   password: { type: String, required: true },
+  password: { 
+    type: String, 
+    required: true 
+  },
 }, { timestamps: true });
+
 
 // Optional: virtual property for convenience
 userSchema.virtual("isStaff").get(function () {
