@@ -11,7 +11,7 @@ import { authMiddleware } from "../middleware/auth.js";
 
 const router = Router();
 
-// Protect routes (example: staff & admin can access orders)
+// Staff & admin only
 router.use(authMiddleware(["staff", "admin"]));
 
 router.post("/", createOrder);

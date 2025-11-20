@@ -4,6 +4,8 @@ import cors from "cors";
 import dotenv from "dotenv";
 import userRoutes from "./routes/userRoutes.js";
 import orderRoutes from "./routes/orderRoutes.js";
+import publicOrderRoutes from "./routes/publicOrderRoutes.js";
+
 
 dotenv.config();
 
@@ -21,6 +23,8 @@ app.use(express.json());
 // Routes
 app.use("/api/users", userRoutes);
 app.use("/api/orders", orderRoutes);
+app.use("/api/public/order", publicOrderRoutes);
+
 
 // MongoDB Connection (async/await)
 const startServer = async () => {

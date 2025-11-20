@@ -9,47 +9,37 @@ export const createOrder = async (req, res) => {
   try {
     const {
       order_number,
-      customer_id,
       customer_name,
       customer_phone,
       customer_address,
       assigned_staff_id,
-      status,
       type_of_item,
-      rating,
-      tracked_location,
     } = req.body;
 
-    // Optional: Validate customer exists
-    const customer = await User.findById(customer_id);
-    if (!customer)
-      return res.status(400).json({ error: "Customer not found" });
-
-    // Optional: Validate assigned staff exists
+    // Validate assigned staff exists if provided
     if (assigned_staff_id) {
       const staff = await User.findById(assigned_staff_id);
-      if (!staff)
-        return res.status(400).json({ error: "Assigned staff not found" });
+      if (!staff) return res.status(400).json({ error: "Assigned staff not found" });
     }
 
     const order = await Order.create({
       order_number,
-      customer_id,
-      customer_name,
-      customer_phone,
-      customer_address,
+      customer: {
+        name: customer_name,
+        phone: customer_phone,
+        address: customer_address,
+      },
       assigned_staff_id,
-      status,
       type_of_item,
-      rating,
-      tracked_location,
     });
 
     res.status(201).json({ message: "Order created successfully", order });
+
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
+
 
 // ===========================
 // GET ALL ORDERS
