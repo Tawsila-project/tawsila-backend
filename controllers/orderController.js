@@ -107,3 +107,112 @@ export const deleteOrder = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+
+// ===========================
+// DRIVER - UPDATE LIVE LOCATION
+// ===========================
+export const updateLocation = async (req, res) => {
+  try {
+    const { order_number, lat, lng } = req.body;
+
+    if (!order_number || !lat || !lng) {
+      return res.status(400).json({ error: "order_number, lat & lng are required" });
+    }
+
+    const order = await Order.findOneAndUpdate(
+      { order_number },
+      {
+        tracked_location: {
+          lat,
+          lng,
+          time: Date.now(),
+        },
+      },
+      { new: true }
+    );
+
+    if (!order) {
+      return res.status(404).json({ error: "Order not found" });
+    }
+
+    res.json({ message: "Location updated", order });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+
+
+// ===========================
+// CUSTOMER - SUBMIT ORDER
+// ===========================
+export const submitOrder = async (req, res) => {
+  try {
+    const { customer_name, customer_phone, customer_address, type_of_item, tracked_location } = req.body;
+
+    if (!customer_name || !customer_phone || !tracked_location) {
+      return res.status(400).json({ error: "Name, phone and location are required" });
+    }
+
+    const order_number = "ORD-" + Date.now();
+
+    const order = await Order.create({
+      customer: {
+        name: customer_name,
+        phone: customer_phone,
+        address: customer_address || "",
+      },
+      type_of_item,
+      order_number,
+      tracked_location: tracked_location, // Save client selected location
+    });
+
+    // EMIT event to all connected drivers
+    if (req.app.get("io")) {
+      req.app.get("io").emit("new-order", {
+        order_number: order.order_number,
+        customer: order.customer,
+        type_of_item: order.type_of_item,
+      });
+    }
+
+    res.status(201).json({
+      message: "Order submitted successfully",
+      order: {
+        id: order._id,
+        order_number: order.order_number,
+      },
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// ===========================
+// CUSTOMER - TRACK ORDER
+// ===========================
+export const trackOrder = async (req, res) => {
+  try {
+    const { order_number } = req.params;
+
+    const order = await Order.findOne({ order_number });
+
+    if (!order) {
+      return res.status(404).json({ error: "Order not found" });
+    }
+
+    res.json({
+      order_number: order.order_number,
+      status: order.status,
+      assigned_staff_id: order.assigned_staff_id,
+      tracked_location: order.tracked_location,
+      customer: order.customer,
+      type_of_item: order.type_of_item,
+      created_at: order.createdAt,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};

@@ -12,10 +12,21 @@ const orderSchema = new Schema({
   },
 
   // Store customer data directly (NO REF)
+  // customer: {
+  //   name: { type: String, required: true },
+  //   phone: { type: String, required: true },
+  //   address: { type: String },
+  // },
+
   customer: {
     name: { type: String, required: true },
     phone: { type: String, required: true },
     address: { type: String },
+    // ⚡️ إضافة حقل لتخزين إحداثيات الوجهة النهائية
+    coords: {
+        lat: { type: Number, required: true },
+        lng: { type: Number, required: true },
+    }
   },
 
   assigned_staff_id: {
