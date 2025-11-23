@@ -23,11 +23,16 @@ const orderSchema = new Schema({
     phone: { type: String, required: true },
     address: { type: String },
     // ⚡️ إضافة حقل لتخزين إحداثيات الوجهة النهائية
-    coords: {
-        lat: { type: Number, required: true },
-        lng: { type: Number, required: true },
-    }
-  },
+    // coords: {
+    //     lat: { type: Number, required: true },
+    //     lng: { type: Number, required: true },
+    // }
+
+   coords: { 
+      lat: { type: Number, required: true }, 
+      lng: { type: Number, required: true },
+     }
+   },
 
   assigned_staff_id: {
     type: Types.ObjectId,
@@ -35,19 +40,25 @@ const orderSchema = new Schema({
   },
 
   status: {
-    type: String,
-    enum: ["received", "in_transit", "delivered"],
-    default: "received",
+  type: String,
+   enum: ["received", "in_transit", "delivered"],  
+   default: "received",
   },
 
   type_of_item: { type: String },
 
   rating: { type: Number, min: 1, max: 5 },
 
+  // tracked_location: {
+  //   lat: Number,
+  //   lng: Number,
+  //   time: { type: Date, default: Date.now },
+  // },
+
   tracked_location: {
-    lat: Number,
-    lng: Number,
-    time: { type: Date, default: Date.now },
+   lat: Number, // لا يشترط required هنا إذا كان قد لا يتوفر عند الإنشاء
+   lng: Number,
+    time: { type: Date, default: Date.now }, // إضافة حقل الوقت
   },
 }, { timestamps: true });
 

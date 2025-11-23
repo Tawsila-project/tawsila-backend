@@ -70,35 +70,34 @@ export const register = async (req, res) => {
 // LOGIN
 // ===========================
 export const login = async (req, res) => {
-  try {
-    const { username, password } = req.body;
+ try {
+ const { username, password } = req.body;
 
-    const user = await User.findOne({ username });
-    if (!user) return res.status(400).json({ error: "Invalid username or password" });
+ const user = await User.findOne({ username });
+ if (!user) return res.status(400).json({ error: "Invalid username or password" });
 
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return res.status(400).json({ error: "Invalid username or password" });
+ const isMatch = await bcrypt.compare(password, user.password);
+ if (!isMatch) return res.status(400).json({ error: "Invalid username or password" });
 
-    const token = jwt.sign(
-      { id: user._id, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: "1d" }
-    );
+ const token = jwt.sign(
+ { id: user._id, role: user.role },
+ process.env.JWT_SECRET,
+ { expiresIn: "1d" }
+ );
+ res.json({
+ message: "Login successful",
+ token,
+ user: {
+ _id: user._id, // 💡 تمت إضافتها هنا - هذه هي الهوية التي سنستخدمها كـ driverId**
+ username: user.username,
+ full_name: user.full_name,
+ role: user.role,
+ }
+ });
 
-    res.json({
-      message: "Login successful",
-      token,
-      user: {
-        _id: user._id,
-        username: user.username,
-        full_name: user.full_name,
-        role: user.role,
-      }
-    });
-
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+ } catch (err) {
+ res.status(500).json({ error: err.message });
+ }
 };
 
 

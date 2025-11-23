@@ -1,106 +1,109 @@
 // src/controllers/publicOrderController.js
 import Order from "../models/Order.js";
+import { getActiveDriversMap } from "../socket/socketHandler.js"; 
+
+
+// testing function
+
+export const submitOrder = async (req, res) => {
+    try {
+        // 1. تحديد بيانات الطلب
+        // نستخدم هنا req.body مباشرة لأننا قمنا بتعديل الواجهة الأمامية (CustomerForm.jsx)
+        // لترسل customer: { name, phone, coords, ... }
+        
+        const orderData = { 
+            ...req.body, 
+            status: "received", // 🚨 تم التعديل ليتطابق مع enum: ["received", "in_transit", "delivered"]
+            order_number: `ORD-${Date.now()}-${Math.floor(Math.random() * 100)}` 
+        };
+        
+        const newOrder = await Order.create(orderData); 
+        
+        // 2. 💡 إشعار السائق المتصل عبر Socket.IO
+        const targetDriverId = "69221010fe49bfdc7928fce7"; // ID السائق النشط لديك
+        
+        const io = req.app.get('io');
+        const activeDriversMap = getActiveDriversMap();
+        const targetSocketId = activeDriversMap.get(targetDriverId); 
+        
+        if (io && targetSocketId) {
+            io.to(targetSocketId).emit('new-order', {
+                order_number: newOrder.order_number,
+                type_of_item: newOrder.type_of_item,
+                // نستخدم customer.address و customer.coords التي تم حفظها الآن
+                customer_address: newOrder.customer.address, 
+                customer_coords: newOrder.customer.coords, 
+            });
+            console.log(`✅ Sent new order ${newOrder.order_number} to driver ${targetDriverId}`);
+        } else {
+            console.log(`⚠️ Driver ${targetDriverId} is offline or order routing failed.`);
+        }
+
+        // 3. إرجاع استجابة النجاح
+        res.status(201).json({ 
+            message: "Order submitted successfully", 
+            order: { order_number: newOrder.order_number }
+        });
+
+    } catch (error) {
+        console.error("❌ CRITICAL SUBMISSION ERROR:", error);
+        
+        let errorMessage = "Failed to process order submission.";
+        if (error.name === 'ValidationError') {
+            errorMessage = error.message; 
+        }
+
+        res.status(500).json({ error: errorMessage });
+    }
+};
 
 // ===========================
 // CUSTOMER - SUBMIT ORDER
 // ===========================
 
-export const submitOrder = async (req, res) => {
-  try {
-    // ⚡️ يجب التأكد من استخراج tracked_location هنا 
-    // ⚡️ (كان هذا هو مصدر الخطأ ReferenceError)
-    const { customer_name, customer_phone, customer_address, type_of_item, tracked_location } = req.body;
-// ______________________________________________________________________
 
-    // Validate required fields + location
-    if (!customer_name || !customer_phone || !tracked_location?.lat || !tracked_location?.lng) {
-      return res.status(400).json({ error: "Customer name, phone, and delivery location are required" });
-    }
-
-    // Generate a unique order number
-    const order_number = "ORD-" + Date.now();
-
-    const order = await Order.create({
-      customer: {
-        name: customer_name,
-        phone: customer_phone,
-        address: customer_address || "",
-        // حفظ إحداثيات الوجهة النهائية للعميل
-        coords: {
-            lat: tracked_location.lat,
-            lng: tracked_location.lng,
-        }
-      },
-      type_of_item,
-      order_number,
-      // حفظ الموقع الأولي للسائق (موقع العميل هو نقطة البداية مؤقتاً)
-      tracked_location: { 
-        lat: tracked_location.lat, 
-        lng: tracked_location.lng,
-      },
-    });
-
-    res.status(201).json({
-      message: "Order submitted successfully",
-      order: {
-        id: order._id,
-        order_number: order.order_number,
-      },
-    });
-  } catch (err) {
-    console.error("❌ Error submitting order:", err.message);
-    // إرجاع خطأ 500 مفصل (للتطوير)
-    res.status(500).json({ error: "Failed to process order", details: err.message }); 
-  }
-};
 // export const submitOrder = async (req, res) => {
-//   try {
-//     const { customer_name, customer_phone, customer_address, type_of_item } = req.body;
-
-//     // Validate required fields
-//     if (!customer_name || !customer_phone) {
-//       return res.status(400).json({ error: "Customer name and phone are required" });
-//     }
-
-//     // Generate a unique order number
-//     const order_number = "ORD-" + Date.now();
-
-//     const order = await Order.create({
-//       customer: {
-//         name: customer_name,
-//         phone: customer_phone,
-//         address: customer_address || "",
-//         coords: {
-//             lat: tracked_location.lat,
-//             lng: tracked_location.lng,
+//     try {
+//         // 1. حفظ الطلب وتوليد رقم الطلب
+//         const newOrder = await Order.create({ 
+//             ...req.body, 
+//             status: "Pending",
+//             order_number: `ORD-${Date.now()}` // مثال لتوليد رقم
+//         });
+        
+//         // 2. تعيين السائق المستهدف (نستخدم الهوية النشطة لديك)
+//         const targetDriverId = "69221010fe49bfdc7928fce7"; // ⚠️ يجب أن يتطابق مع الهوية التي ظهرت في Console
+        
+//         // 3. جلب كائن io وقائمة السائقين
+//         const io = req.app.get('io');
+//         const activeDriversMap = getActiveDriversMap();
+//         const targetSocketId = activeDriversMap.get(targetDriverId); 
+        
+//         // 4. إرسال الإشعار
+//         if (io && targetSocketId) {
+//             io.to(targetSocketId).emit('new-order', {
+//                 order_number: newOrder.order_number,
+//                 type_of_item: newOrder.type_of_item,
+//                 customer_address: req.body.customer_address, 
+//             });
+//             console.log(`✅ Sent new order ${newOrder.order_number} to driver ${targetDriverId} at socket ${targetSocketId}`);
+//         } else {
+//             console.log(`⚠️ Driver ${targetDriverId} is offline or order routing failed.`);
 //         }
-//       },
-//       type_of_item,
-//       order_number,
-//         tracked_location: {
-//         lat: tracked_location.lat, // الموقع الأولي (موقع العميل/الاستلام)
-//         lng: tracked_location.lng,
-//     },
-//     });
 
-//     res.status(201).json({
-//       message: "Order submitted successfully",
-//       order: {
-//         id: order._id,
-//         order_number: order.order_number,
-//       },
-//     });
-//   } catch (err) {
-//     console.error(err);
-//     res.status(500).json({ error: err.message });
-//   }
+//         res.status(201).json({ 
+//             message: "Order submitted successfully", 
+//             order: { order_number: newOrder.order_number }
+//         });
+
+//     } catch (error) {
+//         console.error("❌ Order Submission Error:", error);
+//         res.status(500).json({ error: "Failed to process order submission." });
+//     }
 // };
 
 
 
-// ===========================
-// CUSTOMER - TRACK ORDER
-// ===========================
 export const trackOrder = async (req, res) => {
   try {
     const { order_number } = req.params;

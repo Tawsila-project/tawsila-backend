@@ -144,75 +144,54 @@ export const updateLocation = async (req, res) => {
 
 
 
-// ===========================
-// CUSTOMER - SUBMIT ORDER
-// ===========================
-export const submitOrder = async (req, res) => {
-  try {
-    const { customer_name, customer_phone, customer_address, type_of_item, tracked_location } = req.body;
+// src/controllers/orderController.js
 
-    if (!customer_name || !customer_phone || !tracked_location) {
-      return res.status(400).json({ error: "Name, phone and location are required" });
+// ... (جميع الـ exports السابقة: createOrder, getOrders, getOrder, updateOrder, deleteOrder, updateLocation)
+
+// ===========================
+// DRIVER - ACCEPT ORDER 🟢
+// ===========================
+// src/controllers/orderController.js
+export const acceptOrder = async (req, res) => {
+    try {
+        const { order_number, driver_id } = req.body;
+
+        // ... (التحقق من order_number و driver_id يبقى كما هو)
+
+        // 1. Find the order and update its status
+        const order = await Order.findOneAndUpdate(
+            // 🚨 التعديل الأول: البحث عن الطلبات التي حالتها 'received' (المتطابقة مع حالة الإنشاء)
+            { order_number, status: 'received' }, 
+            {
+                // 🚨 التعديل الثاني: تعيين حالة صالحة من الـ Enum (مثل 'in_transit')
+                status: 'in_transit',
+                assigned_staff_id: driver_id,
+            },
+            { new: true }
+        );
+
+        if (!order) {
+            // الآن رسالة الخطأ 404 منطقية: إما أن الطلب لم يوجد أو تم قبوله بالفعل
+            return res.status(404).json({ error: "Order not found or already assigned" });
+        }
+
+        // 2. Notify ALL drivers that the order is no longer available
+        if (req.app.get("io")) {
+            req.app.get("io").emit("order-accepted", { order_number: order.order_number });
+        }
+        
+        // 3. Notify the customer that a driver has been assigned
+        if (req.app.get("io")) {
+            req.app.get("io").to(order.order_number).emit("status-update", { 
+                status: 'in_transit', // 🚨 استخدام الحالة الجديدة الصحيحة
+                driver_id: driver_id 
+            });
+        }
+
+        res.json({ message: "Order accepted successfully", order });
+
+    } catch (err) {
+        console.error("❌ Error accepting order:", err.message);
+        res.status(500).json({ error: "Failed to accept order", details: err.message });
     }
-
-    const order_number = "ORD-" + Date.now();
-
-    const order = await Order.create({
-      customer: {
-        name: customer_name,
-        phone: customer_phone,
-        address: customer_address || "",
-      },
-      type_of_item,
-      order_number,
-      tracked_location: tracked_location, // Save client selected location
-    });
-
-    // EMIT event to all connected drivers
-    if (req.app.get("io")) {
-      req.app.get("io").emit("new-order", {
-        order_number: order.order_number,
-        customer: order.customer,
-        type_of_item: order.type_of_item,
-      });
-    }
-
-    res.status(201).json({
-      message: "Order submitted successfully",
-      order: {
-        id: order._id,
-        order_number: order.order_number,
-      },
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
-  }
-};
-
-// ===========================
-// CUSTOMER - TRACK ORDER
-// ===========================
-export const trackOrder = async (req, res) => {
-  try {
-    const { order_number } = req.params;
-
-    const order = await Order.findOne({ order_number });
-
-    if (!order) {
-      return res.status(404).json({ error: "Order not found" });
-    }
-
-    res.json({
-      order_number: order.order_number,
-      status: order.status,
-      assigned_staff_id: order.assigned_staff_id,
-      tracked_location: order.tracked_location,
-      customer: order.customer,
-      type_of_item: order.type_of_item,
-      created_at: order.createdAt,
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
 };

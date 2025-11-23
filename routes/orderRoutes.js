@@ -6,7 +6,8 @@ import {
   getOrder,
   updateOrder,
   deleteOrder,
-  updateLocation
+  updateLocation,
+  acceptOrder
 } from "../controllers/orderController.js";
 import { authMiddleware } from "../middleware/auth.js";
 
@@ -21,6 +22,7 @@ router.get("/:id", getOrder);
 router.put("/:id", updateOrder);
 router.delete("/:id", deleteOrder);
 router.post("/update-location", updateLocation); 
+router.post("/accept", acceptOrder);
 
 
 export default router;
