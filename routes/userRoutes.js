@@ -18,12 +18,11 @@ router.post("/register", register);
 router.post("/login", login);
 
 // Protected (admin only)
-router.use(authMiddleware(["admin"]));
 
-router.post("/", createUser);
+router.post("/", authMiddleware(["admin"]), createUser);
 router.get("/", getUsers);
 router.get("/:id", getUser);
 router.put("/:id", updateUser);
-router.delete("/:id", deleteUser);
+router.delete("/:id", authMiddleware(["admin"]), deleteUser);
 
 export default router;
