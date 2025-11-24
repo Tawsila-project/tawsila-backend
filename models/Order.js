@@ -22,11 +22,6 @@ const orderSchema = new Schema({
     name: { type: String, required: true },
     phone: { type: String, required: true },
     address: { type: String },
-    // ⚡️ إضافة حقل لتخزين إحداثيات الوجهة النهائية
-    // coords: {
-    //     lat: { type: Number, required: true },
-    //     lng: { type: Number, required: true },
-    // }
 
    coords: { 
       lat: { type: Number, required: true }, 
