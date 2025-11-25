@@ -11,13 +11,6 @@ const orderSchema = new Schema({
     trim: true,
   },
 
-  // Store customer data directly (NO REF)
-  // customer: {
-  //   name: { type: String, required: true },
-  //   phone: { type: String, required: true },
-  //   address: { type: String },
-  // },
-
   customer: {
     name: { type: String, required: true },
     phone: { type: String, required: true },
@@ -36,7 +29,7 @@ const orderSchema = new Schema({
 
   status: {
   type: String,
-   enum: ["received", "pending_acceptance", "in_transit", "delivered"],
+   enum: ["received", "in_transit", "delivered"],
    default: "received",
   },
 

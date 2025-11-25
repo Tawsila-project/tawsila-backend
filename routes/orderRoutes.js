@@ -8,8 +8,8 @@ import {
   deleteOrder,
   // updateLocation,
   acceptOrder,
-  getPendingOrdersForDriver,
-  completeDelivery
+  // getPendingOrdersForDriver,
+  // completeDelivery
 } from "../controllers/orderController.js";
 import { authMiddleware } from "../middleware/auth.js";
 
@@ -21,9 +21,9 @@ const router = Router();
 // router.post("/", createOrder);
 router.get("/", getOrders);
 router.post("/accept", authMiddleware(["staff", "admin"]), acceptOrder);
-router.post("/complete", completeDelivery);
+// router.post("/complete", completeDelivery);
 
-router.get("/pending/:driverId" , getPendingOrdersForDriver);
+// router.get("/pending/:driverId" , getPendingOrdersForDriver);
 
 router.get("/:id", getOrder);
 router.put("/:id", authMiddleware(["staff", "admin"]), updateOrder);
