@@ -19,7 +19,7 @@ dotenv.config();
 
 // 1. Define the list of allowed origins (frontend URLs)
 const allowedOrigins = [
-    "http://localhost:5173", // Development environment
+    "http://localhost:5173" || "https://tawsila-mp8n.onrender.com ," // Development environment
     // IMPORTANT: Add your deployed frontend URL here, e.g., "https://your-website.com"
 ];
 
