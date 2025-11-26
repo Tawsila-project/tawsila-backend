@@ -75,6 +75,110 @@ export const getOrder = async (req, res) => {
 };
 
 // ===========================
+// GET PLACES STATS
+// ===========================
+
+export const getPlacesStats = async (req, res) => {
+  try {
+    const { range } = req.query;
+
+    let startDate = new Date();
+
+    if (range === "daily") {
+      startDate.setHours(0, 0, 0, 0);
+    } else if (range === "weekly") {
+      startDate.setDate(startDate.getDate() - 7);
+    } else if (range === "monthly") {
+      startDate.setMonth(startDate.getMonth() - 1);
+    }
+
+    const results = await Order.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: startDate }
+        }
+      },
+      {
+        $group: {
+          _id: "$customer.address",
+          deliveries: { $sum: 1 }
+        }
+      },
+      {
+        $project: {
+          city: "$_id",
+          deliveries: 1,
+          _id: 0
+        }
+      }
+    ]);
+
+    res.json(results);
+
+  } catch (error) {
+    console.log("❌ Stats error:", error);
+    res.status(500).json({ error: "Failed to fetch statistics" });
+  }
+};
+
+
+// ===========================
+// GET Orders STATS
+// ===========================
+
+export const getOrdersByRange = async (req, res) => {
+  try {
+    const { range } = req.query;
+
+    let startDate = new Date();
+
+    if (range === "daily") {
+      startDate.setHours(0, 0, 0, 0);
+    } 
+    else if (range === "weekly") {
+      startDate.setDate(startDate.getDate() - 7);
+    } 
+    else if (range === "monthly") {
+      startDate.setMonth(startDate.getMonth() - 1);
+    }
+
+    const stats = await Order.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: startDate }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            $dateToString: { format: "%Y-%m-%d", date: "$createdAt" }
+          },
+          orders: { $sum: 1 }
+        }
+      },
+      {
+        $sort: { _id: 1 }
+      },
+      {
+        $project: {
+          date: "$_id",
+          orders: 1,
+          _id: 0
+        }
+      }
+    ]);
+
+    res.json(stats);
+
+  } catch (error) {
+    console.error("❌ Error loading range stats:", error);
+    res.status(500).json({ error: "Failed to load statistics" });
+  }
+};
+
+
+
+// ===========================
 // UPDATE ORDER
 // ===========================
 export const updateOrder = async (req, res) => {
@@ -157,12 +261,12 @@ export const deleteOrder = async (req, res) => {
 // DRIVER - ACCEPT ORDER 🟢
 // ===========================
 
+
 export const acceptOrder = async (req, res) => {
     try {
         const { order_number, driver_id } = req.body;
 
         const order = await Order.findOneAndUpdate(
-            // البحث عن الطلبات التي حالتها 'received' لمنع قبول نفس الطلب مرتين
             { order_number, status: 'received' }, 
             {
                 status: 'in_transit',
@@ -172,19 +276,19 @@ export const acceptOrder = async (req, res) => {
         );
 
         if (!order) {
-            return res.status(404).json({ error: "Order not found or already assigned" });
+            // يتم إرجاع هذا إذا لم يتم العثور على الطلب أو كانت حالته ليست 'received' (أي تم قبوله من سائق آخر)
+            return res.status(409).json({ error: "Order not found or already assigned/accepted." });
         }
 
         // 2. Notify ALL drivers that the order is no longer available
         if (req.app.get("io")) {
             req.app.get("io").emit("order-accepted", { order_number: order.order_number });
-        }
-
-        // 3. Notify the customer that a driver has been assigned
-        if (req.app.get("io")) {
+            
+            // 3. Notify the customer that a driver has been assigned (افتراضاً أن العميل في غرفة بنفس رقم الطلب)
             req.app.get("io").to(order.order_number).emit("status-update", { 
                 status: 'in_transit', 
-                driver_id: driver_id 
+                driver_id: driver_id,
+                driver_phone: "DRIVER_PHONE_PLACEHOLDER" // يجب جلب رقم هاتف السائق من DB
             });
         }
 
@@ -192,11 +296,49 @@ export const acceptOrder = async (req, res) => {
 
     } catch (err) {
         console.error("❌ Error accepting order:", err.message);
-
-        // إرجاع 500 لأخطاء الخادم الأخرى
         res.status(500).json({ error: "Failed to accept order", details: err.message });
     }
-}
+};
+// export const acceptOrder = async (req, res) => {
+//     try {
+//         const { order_number, driver_id } = req.body;
+
+//         const order = await Order.findOneAndUpdate(
+//             // البحث عن الطلبات التي حالتها 'received' لمنع قبول نفس الطلب مرتين
+//             { order_number, status: 'received' }, 
+//             {
+//                 status: 'in_transit',
+//                 assigned_staff_id: driver_id,
+//             },
+//             { new: true }
+//         );
+
+//         if (!order) {
+//             return res.status(404).json({ error: "Order not found or already assigned" });
+//         }
+
+//         // 2. Notify ALL drivers that the order is no longer available
+//         if (req.app.get("io")) {
+//             req.app.get("io").emit("order-accepted", { order_number: order.order_number });
+//         }
+
+//         // 3. Notify the customer that a driver has been assigned
+//         if (req.app.get("io")) {
+//             req.app.get("io").to(order.order_number).emit("status-update", { 
+//                 status: 'in_transit', 
+//                 driver_id: driver_id 
+//             });
+//         }
+
+//         res.json({ message: "Order accepted successfully", order });
+
+//     } catch (err) {
+//         console.error("❌ Error accepting order:", err.message);
+
+//         // إرجاع 500 لأخطاء الخادم الأخرى
+//         res.status(500).json({ error: "Failed to accept order", details: err.message });
+//     }
+// }
 
 // export const acceptOrder = async (req, res) => {
 //     try {
@@ -243,81 +385,55 @@ export const acceptOrder = async (req, res) => {
 //     }
 
 //   }
-    /*
-// ===========================
-// DRIVER - GET PENDING ORDERS
-// ===========================
-// export const getPendingOrdersForDriver = async (req, res) => {
-//     try {
-//         const { driverId } = req.params; 
-        
-//         // جلب الطلبات المعينة لهذا السائق والتي حالتها 'received' (لم يتم قبولها بعد)
-//         const pendingOrders = await Order.find({ 
-//             status: 'received', 
-//             assigned_staff_id: driverId 
-//         })
-//         .populate("assigned_staff_id", "name"); // جلب اسم السائق فقط (اختياري)
 
-//         res.status(200).json(pendingOrders);
-//     } catch (err) {
-//         console.error("❌ Error fetching pending orders:", err);
-//         res.status(500).json({ error: "Failed to fetch pending orders" });
-//     }
-// };
 
-// export const completeDelivery = async (req, res) => {
-//     try {
-//         const { order_number, driver_id } = req.body;
-//         const io = req.app.get("io"); // استرجاع مثيل Socket.IO
+export const getAvailableOrders = async (req, res) => {
+    try {
+        // 🚨 ملاحظة: يمكنك إضافة منطق بحث جغرافي هنا (مثلاً: within 10km of driver's location)
+        // حالياً، سنبحث عن جميع الطلبات الجديدة (received).
+        const availableOrders = await Order.find({ status: "received" })
+            .select("order_number customer.address customer.coords type_of_item createdAt") // اختيار الحقول الضرورية فقط
+            .sort({ createdAt: -1 }); // ترتيبها من الأحدث للأقدم
 
-//         if (!order_number || !driver_id) {
-//             return res.status(400).json({ error: "Order number and driver ID are required." });
-//         }
+        res.json({
+            message: "Available orders retrieved successfully.",
+            orders: availableOrders
+        });
 
-//         // 1. تحديث حالة الطلب في قاعدة البيانات إلى 'delivered'
-//         const order = await Order.findOneAndUpdate(
-//             { 
-//                 order_number, 
-//                 status: 'in_transit', 
-//                 assigned_staff_id: driver_id 
-//             },
-//             {
-//                 status: 'delivered',
-//                 delivery_completed_at: new Date(),
-//                 tracked_location: null, 
-//             },
-//             { new: true }
-//         );
+    } catch (error) {
+        console.error("❌ Error fetching available orders:", error);
+        res.status(500).json({ error: "Failed to fetch available orders.", details: error.message });
+    }
+};
 
-//         if (!order) {
-//             return res.status(404).json({ error: "Order not found, not in transit, or not assigned to you." });
-//         }
+// =======================================
+// UPDATE DRIVER LOCATION (POST /driver/location/update)
+// =======================================
 
-//         // 🚗 1.5. تحديث حالة السائق إلى AVAILABLE
-//         await User.findByIdAndUpdate(
-//             driver_id, // معرف السائق الذي أتم الطلب
-//             { 
-//                 availability: true // 👈 تعيين التوفر إلى 'متاح'
-//             },
-//             { new: true }
-//         );
-//         console.log(`✅ Driver ${driver_id} availability set to AVAILABLE.`);
+export const updateDriverLocation = async (req, res) => {
+    try {
+        const { driver_id, lat, lng } = req.body;
 
-//         // 2. إرسال إشعار لحظي للعميل عبر Socket.IO
-//         if (io) {
-//             io.to(order_number).emit(`order-status-${order_number}`, { 
-//                 status: 'completed',
-//                 message: 'Delivery completed successfully.'
-//             });
-//             console.log(`✅ Delivery ${order_number} completed by ${driver_id}. Status broadcasted.`);
-//         }
+        // 1. تحديث موقع السائق في قاعدة بيانات المستخدمين (افتراضي: User model)
 
-//         res.status(200).json({ message: "Delivery completed successfully", order });
+        // 2. البحث عن الطلبات التي تم تعيينها لهذا السائق والتي حالتها 'in_transit'
+        const orders = await Order.find({ assigned_staff_id: driver_id, status: 'in_transit' })
+                                  .select("order_number");
 
-//     } catch (err) {
-//         console.error("❌ Error completing order:", err);
-//         res.status(500).json({ error: "Failed to complete order", details: err.message });
-//     }
-// };
+        if (req.app.get("io")) {
+            // 3. البث إلى غرف العملاء المتأثرين (كل عميل في غرفة برقم طلبه)
+            orders.forEach(order => {
+                req.app.get("io").to(order.order_number).emit("driver-location-update", {
+                    lat, 
+                    lng, 
+                    time: new Date() 
+                });
+            });
+        }
 
-*/
+        res.json({ message: "Location updated and broadcasted successfully" });
+    } catch (error) {
+        console.error("❌ Error updating driver location:", error.message);
+        res.status(500).json({ error: "Failed to update location", details: error.message });
+    }
+};

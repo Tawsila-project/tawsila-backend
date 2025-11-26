@@ -168,6 +168,36 @@ export const getUser = async (req, res) => {
 
 
 // Update User
+
+
+export const staffUpdateAvailability = async (req, res) => {
+  try {
+    const userId = req.user.id.toString();
+
+    if (userId !== req.params.id) {
+      return res.status(403).json({ error: "You cannot modify another staff member" });
+    }
+
+    const { availability } = req.body;
+    if (availability === undefined) {
+      return res.status(400).json({ error: "Availability value is required" });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { availability },
+      { new: true }
+    ).select("-password");
+
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    res.json(user);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+
 export const updateUser = async (req, res) => {
   try {
     const updateData = { ...req.body };
@@ -196,6 +226,7 @@ export const updateUser = async (req, res) => {
 
 
 // Delete User
+
 export const deleteUser = async (req, res) => {
   try {
     const targetUser = await User.findById(req.params.id);

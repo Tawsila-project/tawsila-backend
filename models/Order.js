@@ -27,21 +27,24 @@ const orderSchema = new Schema({
     ref: "User",
   },
 
-  status: {
-  type: String,
-   enum: ["received", "in_transit", "delivered"],
-   default: "received",
-  },
+  // status: {
+  // type: String,
+  //  enum: ["received", "in_transit", "delivered"],
+  //  default: "received",
+  // },
+
+   status: {
+        type: String,
+        enum: ["received", "in_transit", "delivered"],
+        default: "received",
+        // 💡 إضافة فهرس لتحسين أداء البحث عن الطلبات المتاحة
+        index: true, 
+    },
 
   type_of_item: { type: String },
 
   rating: { type: Number, min: 1, max: 5 },
 
-  // tracked_location: {
-  //   lat: Number,
-  //   lng: Number,
-  //   time: { type: Date, default: Date.now },
-  // },
 
   tracked_location: {
    lat: Number, // لا يشترط required هنا إذا كان قد لا يتوفر عند الإنشاء

@@ -5,6 +5,7 @@ import {
   getUsers,
   getUser,
   updateUser,
+  staffUpdateAvailability,
   deleteUser,
   register,
   login
@@ -22,7 +23,8 @@ router.post("/login", login);
 router.post("/", authMiddleware(["admin"]), createUser);
 router.get("/", getUsers);
 router.get("/:id", getUser);
-router.put("/:id", updateUser);
+router.put("/:id", authMiddleware(["admin"]), updateUser);
+router.put("/:id/availability", authMiddleware(["staff"]), staffUpdateAvailability);
 router.delete("/:id", authMiddleware(["admin"]), deleteUser);
 
 export default router;
