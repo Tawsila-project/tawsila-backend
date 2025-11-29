@@ -1,6 +1,6 @@
+
 import express from "express";
 import mongoose from "mongoose";
-import cors from "cors";
 import dotenv from "dotenv";
 import { createServer } from "http";
 import { Server } from "socket.io";
@@ -13,59 +13,44 @@ import publicOrderRoutes from "./routes/publicOrderRoutes.js";
 dotenv.config();
 
 // =======================================
-// CRITICAL CORS CONFIGURATION FIX
-// This section allows multiple frontend origins (local and deployed)
-// =======================================
-
-// 1. Define the list of allowed origins (frontend URLs)
-const allowedOrigins = [
-    "http://localhost:5173" , "https://curious-cascaron-69f699.netlify.app" // Development environment
-    // IMPORTANT: Add your deployed frontend URL here, e.g., "https://your-website.com"
-];
-
-// 2. Conditionally add the CLIENT_URL from environment variables if it exists
-if (process.env.CLIENT_URL) {
-    if (!allowedOrigins.includes(process.env.CLIENT_URL)) {
-        allowedOrigins.push(process.env.CLIENT_URL);
-    }
-}
-
-// =======================================
 // EXPRESS INIT
 // =======================================
 const app = express();
 
-// Middleware: Configure CORS with the list of allowed origins
+// =======================================
+// CORS CONFIGURATION (fix preflight for Netlify)
+// =======================================
+const allowedOrigins = [
+  "http://localhost:5173",
+  "https://curious-cascaron-69f699.netlify.app"
+];
 
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      // Allow requests with no origin (like Postman or server-to-server)
-      if (!origin) return callback(null, true);
+if (process.env.CLIENT_URL && !allowedOrigins.includes(process.env.CLIENT_URL)) {
+  allowedOrigins.push(process.env.CLIENT_URL);
+}
 
-      if (allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error(`CORS policy: Origin ${origin} not allowed`));
-      }
-    },
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-    optionsSuccessStatus: 200,
-  })
-);
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (allowedOrigins.includes(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+  }
+  res.setHeader("Access-Control-Allow-Credentials", "true");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Origin, X-Requested-With, Content-Type, Accept, Authorization"
+  );
+  res.setHeader(
+    "Access-Control-Allow-Methods",
+    "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+  );
 
-// app.use(
-//     cors({
-//         // Set the origin to the robust list
-//         origin: allowedOrigins,
-//         credentials: true,
-//         optionsSuccessStatus: 200, 
-//     })
-// );
+  // Handle preflight requests
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(200);
+  }
 
-
+  next();
+});
 
 app.use(express.json());
 
@@ -82,40 +67,39 @@ app.use("/api/public/order", publicOrderRoutes);
 const httpServer = createServer(app);
 
 const io = new Server(httpServer, {
-    cors: {
-        // Use the same robust list for Socket.IO
-        origin: allowedOrigins,
-        methods: ["GET", "POST"],
-        credentials: true,
+  cors: {
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+      callback(new Error("CORS not allowed"));
     },
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    credentials: true,
+  },
 });
 
-// ⚡️ Expose io to controllers
 app.set("io", io);
-
 initializeSocketListeners(io); 
-
 
 // =======================================
 // START SERVER + MONGO
 // =======================================
-
 const startServer = async () => {
-    try {
-        await mongoose.connect(process.env.MONGO_URI);
-        console.log("✅ MongoDB Connected Successfully");
+  try {
+    await mongoose.connect(process.env.MONGO_URI);
+    console.log("✅ MongoDB Connected Successfully");
 
-        const PORT = process.env.PORT || 5000;
-        httpServer.listen(PORT, () =>
-            console.log(`🚀 Server + Socket.IO running on port ${PORT}`)
-        );
-    } catch (error) {
-        console.error("❌ MongoDB Error:", error.message);
-        process.exit(1);
-    }
+    const PORT = process.env.PORT || 5000;
+    httpServer.listen(PORT, () =>
+      console.log(`🚀 Server + Socket.IO running on port ${PORT}`)
+    );
+  } catch (error) {
+    console.error("❌ MongoDB Error:", error.message);
+    process.exit(1);
+  }
 };
 
 startServer();
+
 
 // import express from "express";
 // import mongoose from "mongoose";
@@ -132,15 +116,36 @@ startServer();
 // dotenv.config();
 
 // // =======================================
+// // CRITICAL CORS CONFIGURATION FIX
+// // This section allows multiple frontend origins (local and deployed)
+// // =======================================
+
+// // 1. Define the list of allowed origins (frontend URLs)
+// const allowedOrigins = [
+//     "http://localhost:5173" , "https://curious-cascaron-69f699.netlify.app" // Development environment
+//     // IMPORTANT: Add your deployed frontend URL here, e.g., "https://your-website.com"
+// ];
+
+// // 2. Conditionally add the CLIENT_URL from environment variables if it exists
+// if (process.env.CLIENT_URL) {
+//     if (!allowedOrigins.includes(process.env.CLIENT_URL)) {
+//         allowedOrigins.push(process.env.CLIENT_URL);
+//     }
+// }
+
+// // =======================================
 // // EXPRESS INIT
 // // =======================================
 // const app = express();
 
+// // Middleware: Configure CORS with the list of allowed origins
 // app.use(
-// cors({
-//  origin: process.env.CLIENT_URL || "http://localhost:5173",
-//  credentials: true,
-// })
+//     cors({
+//         // Set the origin to the robust list
+//         origin: allowedOrigins,
+//         credentials: true,
+//         optionsSuccessStatus: 200, 
+//     })
 // );
 
 // app.use(express.json());
@@ -158,11 +163,12 @@ startServer();
 // const httpServer = createServer(app);
 
 // const io = new Server(httpServer, {
-//  cors: {
-//  origin: process.env.CLIENT_URL || "http://localhost:5173",
-//  methods: ["GET", "POST"],
-//  credentials: true,
-//  },
+//     cors: {
+//         // Use the same robust list for Socket.IO
+//         origin: allowedOrigins,
+//         methods: ["GET", "POST"],
+//         credentials: true,
+//     },
 // });
 
 // // ⚡️ Expose io to controllers
@@ -171,26 +177,24 @@ startServer();
 // initializeSocketListeners(io); 
 
 
-
 // // =======================================
 // // START SERVER + MONGO
 // // =======================================
 
 // const startServer = async () => {
-//   try {
-//     await mongoose.connect(process.env.MONGO_URI);
-//     console.log("✅ MongoDB Connected Successfully");
+//     try {
+//         await mongoose.connect(process.env.MONGO_URI);
+//         console.log("✅ MongoDB Connected Successfully");
 
-//     const PORT = process.env.PORT || 5000;
-//     httpServer.listen(PORT, () =>
-//       console.log(`🚀 Server + Socket.IO running on port ${PORT}`)
-//     );
-//   } catch (error) {
-//     console.error("❌ MongoDB Error:", error.message);
-//     process.exit(1);
-//   }
+//         const PORT = process.env.PORT || 5000;
+//         httpServer.listen(PORT, () =>
+//             console.log(`🚀 Server + Socket.IO running on port ${PORT}`)
+//         );
+//     } catch (error) {
+//         console.error("❌ MongoDB Error:", error.message);
+//         process.exit(1);
+//     }
 // };
 
 // startServer();
-
 
