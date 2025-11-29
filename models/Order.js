@@ -11,6 +11,7 @@ const orderSchema = new Schema({
     trim: true,
   },
 
+  
   customer: {
     name: { type: String, required: true },
     phone: { type: String, required: true },
