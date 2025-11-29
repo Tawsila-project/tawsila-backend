@@ -36,14 +36,36 @@ if (process.env.CLIENT_URL) {
 const app = express();
 
 // Middleware: Configure CORS with the list of allowed origins
+
 app.use(
-    cors({
-        // Set the origin to the robust list
-        origin: allowedOrigins,
-        credentials: true,
-        optionsSuccessStatus: 200, 
-    })
+  cors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like Postman or server-to-server)
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error(`CORS policy: Origin ${origin} not allowed`));
+      }
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    optionsSuccessStatus: 200,
+  })
 );
+
+// app.use(
+//     cors({
+//         // Set the origin to the robust list
+//         origin: allowedOrigins,
+//         credentials: true,
+//         optionsSuccessStatus: 200, 
+//     })
+// );
+
+
 
 app.use(express.json());
 
