@@ -7,7 +7,6 @@ import mongoose from "mongoose";
 // استخدام Map لتخزين السائقين النشطين (DriverId -> SocketId)
 // const activeDrivers = new Map();
 
-// الثابت الخاص بالغرفة يجب أن يكون متطابقًا مع orderController.js
 const DRIVERS_POOL_ROOM = "drivers-pool"; 
 
 export const initializeSocketListeners = (io) => {
