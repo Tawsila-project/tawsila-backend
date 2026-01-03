@@ -1,46 +1,9 @@
-// src/controllers/orderController.js
 import Order from "../models/Order.js";
-import User from "../models/User.js"; // in case we need validations
-const GOOGLE_API_KEY = process.env.GOOGLE_MAPS_API_KEY;
+import User from "../models/User.js"; 
+import { activeDrivers } from '../socket/socketStore.js';
 import axios from 'axios';
 
-// ===========================
-// CREATE ORDER
-// ===========================
-// export const createOrder = async (req, res) => {
-//   try {
-//     const {
-//       order_number,
-//       customer_name,
-//       customer_phone,
-//       customer_address,
-//       assigned_staff_id,
-//       type_of_item,
-//     } = req.body;
 
-//     // Validate assigned staff exists if provided
-//     if (assigned_staff_id) {
-//       const staff = await User.findById(assigned_staff_id);
-//       if (!staff) return res.status(400).json({ error: "Assigned staff not found" });
-//     }
-
-//     const order = await Order.create({
-//       order_number,
-//       customer: {
-//         name: customer_name,
-//         phone: customer_phone,
-//         address: customer_address,
-//       },
-//       assigned_staff_id,
-//       type_of_item,
-//     });
-
-//     res.status(201).json({ message: "Order created successfully", order });
-
-//   } catch (err) {
-//     res.status(500).json({ error: err.message });
-//   }
-// };
 
 
 // ===========================
@@ -76,102 +39,47 @@ export const getOrder = async (req, res) => {
   }
 };
 
-// ===========================
-// GET PLACES STATS
-// ===========================
+const getStartDate = (range) => {
+  const now = new Date();
+  let startDate = new Date(now); // نسخ التاريخ الحالي
 
-export const getPlacesStats = async (req, res) => {
-  try {
-    const { range } = req.query;
-
-    let startDate = new Date();
-
-    if (range === "daily") {
-      startDate.setHours(0, 0, 0, 0);
-    } else if (range === "weekly") {
-      startDate.setDate(startDate.getDate() - 7);
-    } else if (range === "monthly") {
-      startDate.setMonth(startDate.getMonth() - 1);
-    }
-
-    const results = await Order.aggregate([
-      {
-        $match: {
-          createdAt: { $gte: startDate }
-        }
-      },
-      {
-        $group: {
-          _id: "$customer.address",
-          deliveries: { $sum: 1 }
-        }
-      },
-      {
-        $project: {
-          city: "$_id",
-          deliveries: 1,
-          _id: 0
-        }
-      }
-    ]);
-
-    res.json(results);
-
-  } catch (error) {
-    console.log("❌ Stats error:", error);
-    res.status(500).json({ error: "Failed to fetch statistics" });
+  switch (range) {
+    case "daily":
+      startDate.setHours(0,0,0,0);
+      break;
+    case "weekly":
+      startDate.setDate(startDate.getDate() - 6); // آخر 7 أيام
+      startDate.setHours(0,0,0,0);
+      break;
+    case "monthly":
+      startDate.setDate(1); // بداية الشهر الحالي
+      startDate.setHours(0,0,0,0);
+      break;
+    default:
+      startDate = new Date(0); // fallback
   }
+  return startDate;
 };
 
-
-// ===========================
-// GET Orders STATS
-// ===========================
 
 export const getOrdersByRange = async (req, res) => {
   try {
     const { range } = req.query;
-
-    let startDate = new Date();
-
-    if (range === "daily") {
-      startDate.setHours(0, 0, 0, 0);
-    } 
-    else if (range === "weekly") {
-      startDate.setDate(startDate.getDate() - 7);
-    } 
-    else if (range === "monthly") {
-      startDate.setMonth(startDate.getMonth() - 1);
-    }
+    const startDate = getStartDate(range);
 
     const stats = await Order.aggregate([
-      {
-        $match: {
-          createdAt: { $gte: startDate }
-        }
-      },
+      { $match: { createdAt: { $gte: startDate } } },
       {
         $group: {
-          _id: {
-            $dateToString: { format: "%Y-%m-%d", date: "$createdAt" }
-          },
+          _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
           orders: { $sum: 1 }
         }
       },
-      {
-        $sort: { _id: 1 }
-      },
-      {
-        $project: {
-          date: "$_id",
-          orders: 1,
-          _id: 0
-        }
-      }
+      { $sort: { _id: 1 } },
+      { $project: { date: "$_id", orders: 1, _id: 0 } }
     ]);
 
     res.json(stats);
-
   } catch (error) {
     console.error("❌ Error loading range stats:", error);
     res.status(500).json({ error: "Failed to load statistics" });
@@ -179,16 +87,170 @@ export const getOrdersByRange = async (req, res) => {
 };
 
 
+export const getPlacesStats = async (req, res) => {
+  try {
+    const { range } = req.query;
+    const startDate = getStartDate(range);
+
+    const results = await Order.aggregate([
+      { $match: { createdAt: { $gte: startDate } } },
+      {
+        $group: {
+          _id: "$customer.address",
+          deliveries: { $sum: 1 }
+        }
+      },
+      {
+        $project: { city: "$_id", deliveries: 1, _id: 0 }
+      }
+    ]);
+
+    res.json(results);
+  } catch (error) {
+    console.error("❌ Stats error:", error);
+    res.status(500).json({ error: "Failed to fetch statistics" });
+  }
+};
+
+// ===========================
+// GET PLACES STATS
+// ===========================
+// export const getPlacesStats = async (req, res) => {
+//   try {
+//     const { range } = req.query;
+
+//     let startDate = new Date();
+
+//     if (range === "daily") {
+//       startDate.setHours(0, 0, 0, 0);
+//     } else if (range === "weekly") {
+//       startDate.setDate(startDate.getDate() - 7);
+//     } else if (range === "monthly") {
+//       startDate.setMonth(startDate.getMonth() - 1);
+//     }
+
+//     const results = await Order.aggregate([
+//       {
+//         $match: {
+//           createdAt: { $gte: startDate }
+//         }
+//       },
+//       {
+//         $group: {
+//           _id: "$customer.address",
+//           deliveries: { $sum: 1 }
+//         }
+//       },
+//       {
+//         $project: {
+//           city: "$_id",
+//           deliveries: 1,
+//           _id: 0
+//         }
+//       }
+//     ]);
+
+//     res.json(results);
+
+//   } catch (error) {
+//     console.log("❌ Stats error:", error);
+//     res.status(500).json({ error: "Failed to fetch statistics" });
+//   }
+// };
+
+
+
+
+// ===========================
+// GET Orders STATS
+// ===========================
+// export const getOrdersByRange = async (req, res) => {
+//   try {
+//     const { range } = req.query;
+
+//     let startDate = new Date();
+
+//     if (range === "daily") {
+//       startDate.setHours(0, 0, 0, 0);
+//     } 
+//     else if (range === "weekly") {
+//       startDate.setDate(startDate.getDate() - 7);
+//     } 
+//     else if (range === "monthly") {
+//       startDate.setMonth(startDate.getMonth() - 1);
+//     }
+
+//     const stats = await Order.aggregate([
+//       {
+//         $match: {
+//           createdAt: { $gte: startDate }
+//         }
+//       },
+//       {
+//         $group: {
+//           _id: {
+//             $dateToString: { format: "%Y-%m-%d", date: "$createdAt" }
+//           },
+//           orders: { $sum: 1 }
+//         }
+//       },
+//       {
+//         $sort: { _id: 1 }
+//       },
+//       {
+//         $project: {
+//           date: "$_id",
+//           orders: 1,
+//           _id: 0
+//         }
+//       }
+//     ]);
+
+//     res.json(stats);
+
+//   } catch (error) {
+//     console.error("❌ Error loading range stats:", error);
+//     res.status(500).json({ error: "Failed to load statistics" });
+//   }
+// };
+
+
 
 // ===========================
 // UPDATE ORDER
 // ===========================
+// export const updateOrder = async (req, res) => {
+//   try {
+//     const order = await Order.findByIdAndUpdate(
+//       req.params.id,
+//       req.body,
+//       { new: true } // return updated document
+//     ).populate("assigned_staff_id", "-password -token");
+
+//     if (!order) return res.status(404).json({ error: "Order not found" });
+
+//     res.status(200).json({ message: "Order updated successfully", order });
+//   } catch (err) {
+//     console.error("UPDATE ORDER ERROR:", err);
+//     res.status(500).json({ error: "Server error while updating order" });
+//   }
+// };
+
 export const updateOrder = async (req, res) => {
   try {
+    const { status } = req.body;
+
+    // إذا تم إرسال status
+    if (status === "cancelled") {
+      req.body.cancelledAt = new Date(); // ضع التاريخ الحالي
+    } else {
+      req.body.cancelledAt = null; // أي تغيير آخر يمسح التاريخ
+    }
+
     const order = await Order.findByIdAndUpdate(
       req.params.id,
       req.body,
-      { new: true } // return updated document
+      { new: true }
     ).populate("assigned_staff_id", "-password -token");
 
     if (!order) return res.status(404).json({ error: "Order not found" });
@@ -199,6 +261,7 @@ export const updateOrder = async (req, res) => {
     res.status(500).json({ error: "Server error while updating order" });
   }
 };
+
 
 
 // ===========================
@@ -222,38 +285,55 @@ export const deleteOrder = async (req, res) => {
 
 
 // ===========================
-// DRIVER - UPDATE LIVE LOCATION
+// SUBMIT ORDER RATING (Save to DB) ⭐️
 // ===========================
-// export const updateLocation = async (req, res) => {
-//   try {
-//     const { order_number, lat, lng } = req.body;
+// Assuming this function is in your orderController.js
 
-//     if (!order_number || !lat || !lng) {
-//       return res.status(400).json({ error: "order_number, lat & lng are required" });
-//     }
+export const submitOrderRating = async (req, res) => {
+    console.log("ATTEMPTING TO SUBMIT RATING:", req.params.orderId);
+    
+    try {
+        const { orderId } = req.params;
+        const { rating } = req.body;
 
-//     const order = await Order.findOneAndUpdate(
-//       { order_number },
-//       {
-//         tracked_location: {
-//           lat,
-//           lng,
-//           time: Date.now(),
-//         },
-//       },
-//       { new: true }
-//     );
+        // 1. Validation 
+        // (Assuming validation for null, NaN, and range 1-5 is present)
+        const numericRating = Number(rating);
+        
+        // 2. Find and update the order
+        const order = await Order.findOneAndUpdate(
+            // Query Conditions (All must be true for update to succeed):
+            { 
+                order_number: orderId, 
+                // 🔑 FIX: Changed status to "Delivered" to match database casing.
+                status: "Delivered", 
+                rating: { $exists: false } // Must NOT have a rating yet
+            }, 
+            { rating: numericRating },
+            { new: true, runValidators: true }
+        ).select("order_number rating customer.name assigned_staff_id"); 
 
-//     if (!order) {
-//       return res.status(404).json({ error: "Order not found" });
-//     }
+        if (!order) {
+            // The 404 response is correct if the order doesn't meet the criteria.
+            return res.status(404).json({ 
+                error: "Order not found, or it has already been rated, or it is not marked as delivered." 
+            });
+        }
+        
+        // Success response
+        res.json({ 
+            message: `Rating of ${numericRating} saved successfully for order ${order.order_number}`,
+            order: order
+        });
 
-//     res.json({ message: "Location updated", order });
-//   } catch (err) {
-//     res.status(500).json({ error: err.message });
-//   }
-// };
-
+    } catch (err) {
+        console.error("SUBMIT RATING ERROR:", err);
+        if (err.name === 'ValidationError') {
+            return res.status(400).json({ error: err.message });
+        }
+        res.status(500).json({ error: "Server error during rating submission" });
+    }
+};
 
 
 
@@ -301,92 +381,6 @@ export const acceptOrder = async (req, res) => {
         res.status(500).json({ error: "Failed to accept order", details: err.message });
     }
 };
-// export const acceptOrder = async (req, res) => {
-//     try {
-//         const { order_number, driver_id } = req.body;
-
-//         const order = await Order.findOneAndUpdate(
-//             // البحث عن الطلبات التي حالتها 'received' لمنع قبول نفس الطلب مرتين
-//             { order_number, status: 'received' }, 
-//             {
-//                 status: 'in_transit',
-//                 assigned_staff_id: driver_id,
-//             },
-//             { new: true }
-//         );
-
-//         if (!order) {
-//             return res.status(404).json({ error: "Order not found or already assigned" });
-//         }
-
-//         // 2. Notify ALL drivers that the order is no longer available
-//         if (req.app.get("io")) {
-//             req.app.get("io").emit("order-accepted", { order_number: order.order_number });
-//         }
-
-//         // 3. Notify the customer that a driver has been assigned
-//         if (req.app.get("io")) {
-//             req.app.get("io").to(order.order_number).emit("status-update", { 
-//                 status: 'in_transit', 
-//                 driver_id: driver_id 
-//             });
-//         }
-
-//         res.json({ message: "Order accepted successfully", order });
-
-//     } catch (err) {
-//         console.error("❌ Error accepting order:", err.message);
-
-//         // إرجاع 500 لأخطاء الخادم الأخرى
-//         res.status(500).json({ error: "Failed to accept order", details: err.message });
-//     }
-// }
-
-// export const acceptOrder = async (req, res) => {
-//     try {
-//         const { order_number, driver_id } = req.body;
-
-//           const order = await Order.findOneAndUpdate(
-//             // 🚨 التعديل الأول: البحث عن الطلبات التي حالتها 'received' (المتطابقة مع حالة الإنشاء)
-//             { order_number, status: 'received' }, 
-//                {
-//                 // 🚨 التعديل الثاني: تعيين حالة صالحة من الـ Enum (مثل 'in_transit')
-//                 status: 'in_transit',
-//                 assigned_staff_id: driver_id,
-//                 },
-//             { new: true }
-//         );
-
-//         if (!order) {
-//             // الآن رسالة الخطأ 404 منطقية: إما أن الطلب لم يوجد أو تم قبوله بالفعل
-//             return res.status(404).json({ error: "Order not found or already assigned" });
-
-//              }
-
-//         // 2. Notify ALL drivers that the order is no longer available
-//         if (req.app.get("io")) {
-//             req.app.get("io").emit("order-accepted", { order_number: order.order_number });
-
-//               }
-
-//         // 3. Notify the customer that a driver has been assigned
-//         if (req.app.get("io")) {
-//             req.app.get("io").to(order.order_number).emit("status-update", { 
-//                 status: 'in_transit', // 🚨 استخدام الحالة الجديدة الصحيحة
-//                 driver_id: driver_id 
-
-//                      });
-//         }
-
-//          res.json({ message: "Order accepted successfully", order });
-
-//            } catch (err) {
-//         console.error("❌ Error accepting order:", err.message);
-
-//         res.status(500).json({ error: "Failed to accept order", details: err.message });
-//     }
-
-//   }
 
 
 export const getAvailableOrders = async (req, res) => {
@@ -443,79 +437,87 @@ export const updateDriverLocation = async (req, res) => {
 
   
 // ============ calculateRouteInfo  ============
+
+
 export const calculateRouteInfo = async (req, res) => {
-    // 1. استلام الإحداثيات من الواجهة الأمامية
-    const { origin, destination } = req.body; 
-
-    console.log("Received coordinates:", origin, destination);
-
+    const { origin, destination } = req.body;
 
     if (!origin || !destination) {
-        return res.status(400).json({ 
-            success: false, 
-            error: "Missing origin or destination coordinates." 
-        });
+        return res.status(400).json({ success: false, error: "Missing coordinates" });
     }
-
-    // 2. التحقق من مفتاح API وتنسيق الإحداثيات
-    if (!GOOGLE_API_KEY) {
-        return res.status(500).json({ 
-            success: false, 
-            error: "Google Maps API key not configured on the server." 
-        });
-    }
-    const originCoords = `${origin.lat},${origin.lng}`;
-    const destinationCoords = `${destination.lat},${destination.lng}`;
 
     try {
-        // 3. استدعاء Google Maps Directions API
-        const googleUrl = `https://maps.googleapis.com/maps/api/directions/json`;
+        const url = `https://router.project-osrm.org/route/v1/driving/${origin.lng},${origin.lat};${destination.lng},${destination.lat}?overview=false`;
+        const response = await axios.get(url);
+        const route = response.data.routes[0].legs[0];
 
-        console.log("API Key Length:", GOOGLE_API_KEY ? GOOGLE_API_KEY.length : "MISSING");    
-                  
-        const response = await axios.get(googleUrl, {
-            params: {
-                origin: originCoords,
-                destination: destinationCoords,
-                mode: 'driving', // حساب المسافة بناءً على القيادة
-                key: GOOGLE_API_KEY,
-              }
-
+        return res.json({
+            success: true,
+            distance: route.distance,
+            duration: route.duration
         });
-
-        const data = response.data;
-
-        // 🚨 2. Logs بعد جلب الـ data
-        console.log("Google API Response Status:", data.status); 
-        console.log("Full Google Response (if failed):", data);
-
-        // 4. تحليل الاستجابة
-        if (data.status === 'OK' && data.routes && data.routes.length > 0) {
-            const leg = data.routes[0].legs[0]; 
-            
-            const distance = leg.distance.text; // مثال: "5.2 km"
-            const duration = leg.duration.text; // مثال: "12 mins"
-            
-            // 5. إرسال النتيجة
-            return res.json({ 
-                success: true,
-                distance, 
-                duration 
-            });
-
-        } else {
-            console.error("Google Maps API Error:", data.status, data.error_message);
-            return res.status(500).json({ 
-                success: false,
-                error: "Could not calculate route. API status: " + data.status 
-            });
-        }
 
     } catch (error) {
-        console.error("Route calculation exception:", error.message);
-        return res.status(500).json({ 
-            success: false,
-            error: "Internal server error during route calculation." 
-        });
+        console.error("OSRM Error:", error.message);
+        return res.status(500).json({ success: false, error: "Route calculation failed." });
+    }
+};
+
+
+// ===========================
+// CANCEL ORDER 🛑
+// ===========================
+export const cancelOrder = async (req, res) => {
+    try {
+        const { orderId } = req.params;
+
+        // البحث عن الطلب والتحقق من أنه لم يتم إلغاؤه مسبقًا أو تسليمه
+        const order = await Order.findOne({ order_number: orderId});
+
+        if (!order) {
+            return res.status(404).json({ error: "Order not found" });
+        }
+
+        if (order.status === "delivered") {
+            return res.status(400).json({ error: "Cannot cancel a delivered order" });
+        }
+
+        if (order.status === "cancelled") {
+            return res.status(400).json({ error: "Order is already cancelled" });
+        }
+
+        // تحديث حالة الطلب إلى cancelled وتسجيل الوقت
+        order.status = "cancelled";
+        order.cancelledAt = new Date();
+        await order.save();
+
+        // إعادة توافر السائق إذا تم تعيينه
+        if (order.assigned_staff_id) {
+            await User.findByIdAndUpdate(order.assigned_staff_id, { availability: true });
+        }
+
+        // إشعار العميل والسائق عبر Socket.io
+        if (req.app.get("io")) {
+            const io = req.app.get("io");
+            io.to(order.order_number).emit("order-cancelled", {
+                orderId: order._id,
+                cancelledAt: order.cancelledAt,
+            });
+
+            if (order.assigned_staff_id) {
+                const driverSocketId = activeDrivers.get(order.assigned_staff_id.toString());
+                if (driverSocketId) {
+                    io.to(driverSocketId).emit("order-cancelled", {
+                        orderId: order._id,
+                        cancelledAt: order.cancelledAt,
+                    });
+                }
+            }
+        }
+
+        res.json({ message: "Order cancelled successfully", order });
+    } catch (error) {
+        console.error("❌ Error cancelling order:", error.message);
+        res.status(500).json({ error: "Failed to cancel order", details: error.message });
     }
 };

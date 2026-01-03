@@ -1,125 +1,98 @@
 import Order from "../models/Order.js";
-// 💡 تحديث الاستيراد: يجب أن يكون اسم الملف المستورد من socketHandler مطابقاً
-import { getActiveDriversMap } from "../socket/socketHandler.js"; 
-// import { haversineDistance } from "../utils/geoUtils.js";
-// import { generateOrderNumber } from "../utils/orderUtils.js";
-
-
-
-// 🚨 الحل: تعريف الثابت المفقود هنا ليصبح متاحًا داخل الدوال
+import User from "../models/User.js";
+import { getActiveDriversMap } from "../socket/socketHandler.js";
+import { haversineDistance } from "../utils/geoUtils.js";
+import { generateOrderNumber } from "../utils/generateNumber.js";
 const DRIVERS_POOL_ROOM = "drivers-pool"; 
 
-const generateOrderNumber = () => {
-    // Generate a unique-ish string: Timestamp (last 10 digits) + a 4-digit random number
-    const timestampPart = Date.now().toString().slice(-10);
-    const randomPart = Math.floor(Math.random() * 9000) + 1000;
-    return `ORD-${timestampPart}-${randomPart}`;
-};
+
 // =======================================
 // SUBMIT ORDER
 // =======================================
 
-
 export const submitOrder = async (req, res) => {
-    try { 
-        const orderData = {
-            ...req.body,
-            order_number: generateOrderNumber(), // استخدام الدالة المخصصة
-        };
+  try {
 
-        const newOrder = await Order.create(orderData);
+    const existingOrder = await Order.findOne({
+      "customer.phone": req.body.customer.phone,
+      status: { $in: ["received", "in_transit"] }
+    });
 
-        // 2. Notify ALL active drivers via Socket.IO (Broadcast to the pool)
-        const io = req.app.get("io");
-        
-        if (io) {
-            // الآن DRIVERS_POOL_ROOM مُعرّف ولن يسبب خطأ
-            io.to(DRIVERS_POOL_ROOM).emit("new-order", {
-                order_number: newOrder.order_number,
-                type_of_item: newOrder.type_of_item,
-                customer_address: newOrder.customer.address,
-                customer_coords: newOrder.customer.coords,
-            });
-
-            console.log(`✅ Sent new order ${newOrder.order_number} to all active drivers in the pool.`);
-        } else {
-            console.log(`⚠️ Socket.IO not initialized. Order ${newOrder.order_number} submitted but not broadcasted.`);
-        }
-
-        // 3. Return success response
-        res.status(201).json({
-            message: "Order submitted successfully",
-            order: { order_number: newOrder.order_number },
-        });
-
-    } catch (error) {
-        console.error("❌ CRITICAL SUBMISSION ERROR:", error);
-
-        // 💡 منطق محسّن للتعامل مع أخطاء التحقق من صحة البيانات
-        if (error.name === "ValidationError") {
-            // إرجاع 400 (Bad Request) لأخطاء البيانات المدخلة
-            return res.status(400).json({ error: "Validation Failed", details: error.message });
-        }
-        
-        // إرجاع 500 لأخطاء الخادم الأخرى
-        res.status(500).json({ error: "Failed to process order submission due to a server error.", details: error.message });
+    if (existingOrder) {
+      return res.status(400).json({
+        error: "You already have an active order",
+        order_number: existingOrder.order_number
+      });
     }
+
+    const orderData = { ...req.body, order_number: generateOrderNumber() };
+    const newOrder = await Order.create(orderData);
+
+    const activeDriversMap = getActiveDriversMap();
+    const driverIds = Array.from(activeDriversMap.keys());
+
+    let closestDriver = null;
+
+    if (driverIds.length > 0) {
+      const drivers = await User.find({ 
+        _id: { $in: driverIds },
+        role: "staff",
+        availability: true
+      }).select("coords");
+
+      let minDistance = Infinity;
+
+      drivers.forEach(driver => {
+        if (!driver.coords) return;
+        const distance = haversineDistance(newOrder.customer.coords, driver.coords);
+        if (distance < minDistance) {
+          minDistance = distance;
+          closestDriver = driver;
+        }
+      });
+
+      if (closestDriver) {
+        newOrder.assigned_staff_id = closestDriver._id;
+        newOrder.status = "in_transit";
+        await newOrder.save();
+
+        const io = req.app.get("io");
+        const driverSocketId = activeDriversMap.get(closestDriver._id.toString());
+        if (io && driverSocketId) {
+          io.to(driverSocketId).emit("new-order-assigned", {
+            order_number: newOrder.order_number,
+            customer: newOrder.customer,
+            type_of_item: newOrder.type_of_item
+          });
+        }
+
+        driverIds.forEach(driverId => {
+          if (driverId === closestDriver._id.toString()) return; // استثناء الأقرب
+          const socketId = activeDriversMap.get(driverId);
+          if (io && socketId) {
+            io.to(socketId).emit("new-order", {
+              order_number: newOrder.order_number,
+              type_of_item: newOrder.type_of_item,
+              customer_address: newOrder.customer.address,
+              customer_coords: newOrder.customer.coords,
+            });
+          }
+        });
+      }
+    }
+
+    res.status(201).json({ 
+      message: "Order submitted successfully", 
+      order: { order_number: newOrder.order_number } 
+    });
+
+  } catch (error) {
+    console.error("❌ CRITICAL SUBMISSION ERROR:", error);
+    res.status(500).json({ error: "Failed to submit order", details: error.message });
+  }
 };
 
-// export const submitOrder = async (req, res) => {
-//     try { 
-//         const orderData = {
-//             ...req.body,
-//             order_number: `ORD-${Date.now()}-${Math.floor(Math.random() * 100)}`,
-//         };
 
-//         const newOrder = await Order.create(orderData);
-
-//         // 2. Notify driver via Socket.IO
-//         const targetDriverId = "69221010fe49bfdc7928fce7";
-
-//         const io = req.app.get("io");
-//         const activeDriversMap = getActiveDriversMap();
-//         const targetSocketId = activeDriversMap.get(targetDriverId);
-
-//         if (io && targetSocketId) {
-//             io.to(targetSocketId).emit("new-order", {
-//                 order_number: newOrder.order_number,
-//                 type_of_item: newOrder.type_of_item,
-//                 customer_address: newOrder.customer.address,
-//                 customer_coords: newOrder.customer.coords,
-//             });
-
-//             console.log(`✅ Sent new order ${newOrder.order_number} to driver ${targetDriverId}`);
-//         } else {
-//             console.log(`⚠️ Driver ${targetDriverId} is offline or order routing failed.`);
-//         }
-
-//         // 3. Return success response (يجب أن يكون خارج if/else)
-//         res.status(201).json({
-//             message: "Order submitted successfully",
-//             order: { order_number: newOrder.order_number },
-//         });
-
-//     } catch (error) {
-//         console.error("❌ CRITICAL SUBMISSION ERROR:", error);
-
-//         let errorMessage = "Failed to process order submission.";
-//         if (error.name === "ValidationError") {
-//             errorMessage = error.message;
-//         }
-
-//         res.status(500).json({ error: errorMessage });
-//     }
-// };
-
-
-
-
-
-// =======================================
-// TRACK ORDER
-// =======================================
 
 
 export const trackOrder = async (req, res) => {
@@ -152,32 +125,3 @@ export const trackOrder = async (req, res) => {
     }
 };
 
-// export const trackOrder = async (req, res) => {
-//     try {
-//         const { order_number } = req.params;
-
-//         const order = await Order.findOne({ order_number });
-
-//         if (!order) {
-//             return res.status(404).json({ error: "Order not found" });
-//         }
-
-//         res.json({
-//             order_number: order.order_number,
-//             status: order.status,
-//             assigned_staff_id: order.assigned_staff_id,
-//             tracked_location: order.tracked_location,
-//             customer: {
-//                 name: order.customer.name,
-//                 phone: order.customer.phone,
-//                 address: order.customer.address,
-//                 coords: order.customer.coords, // matches frontend expectation
-//             },
-//             type_of_item: order.type_of_item,
-//             created_at: order.createdAt,
-//         });
-
-//     } catch (err) {
-//         res.status(500).json({ error: err.message });
-//     }
-// };
