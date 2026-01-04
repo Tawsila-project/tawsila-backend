@@ -2,11 +2,14 @@ import Order from "../models/Order.js";
 import User from "../models/User.js";
 import { activeDrivers } from './socketStore.js';
 
-import mongoose from "mongoose";
+
+const MAX_ACCURACY = 100;       // meters
+const MAX_JUMP_METERS = 300;   // meters
 
 // استخدام Map لتخزين السائقين النشطين (DriverId -> SocketId)
 // const activeDrivers = new Map();
 
+// الثابت الخاص بالغرفة يجب أن يكون متطابقًا مع orderController.js
 const DRIVERS_POOL_ROOM = "drivers-pool"; 
 
 export const initializeSocketListeners = (io) => {
@@ -58,21 +61,95 @@ export const initializeSocketListeners = (io) => {
 
         // ============================
         // 3. Driver Live Location Update
-        socket.on("update-location", async ({ orderId, driverId, lat, lng }) => {
-            if (!orderId || typeof lat !== 'number' || typeof lng !== 'number') {
-                console.warn(`Invalid location data from Driver ${driverId}`);
-                return;
+        // socket.on("update-location", async ({ orderId, driverId, lat, lng }) => {
+        //     if (!orderId || typeof lat !== 'number' || typeof lng !== 'number') {
+        //         console.warn(`Invalid location data from Driver ${driverId}`);
+        //         return;
+        //     }
+
+        //     // تحديث الموقع في DB
+        //     Order.findOneAndUpdate(
+        //         { order_number: orderId },
+        //         { tracked_location: { lat, lng, time: Date.now() } }
+        //     ).catch(err => console.error("DB update error:", err));
+
+        //     // بث الموقع للعميل
+        //     io.to(orderId).emit("location-updated", { lat, lng, driverId, timestamp: Date.now() });
+        // });
+
+        socket.on("update-location", async ({
+        orderId,
+        driverId,
+        lat,
+        lng,
+        accuracy,
+        timestamp
+        }) => {
+        if (!orderId || typeof lat !== "number" || typeof lng !== "number") {
+            console.warn(`Invalid location from driver ${driverId}`);
+            return;
+        }
+
+        try {
+            const order = await Order.findOne(
+            { order_number: orderId },
+            { tracked_location: 1 }
+            );
+
+            let isReliable = true;
+
+            // 1️⃣ فحص الدقة
+            if (accuracy && accuracy > MAX_ACCURACY) {
+            isReliable = false;
             }
 
-            // تحديث الموقع في DB
-            Order.findOneAndUpdate(
-                { order_number: orderId },
-                { tracked_location: { lat, lng, time: Date.now() } }
-            ).catch(err => console.error("DB update error:", err));
+            // 2️⃣ فحص القفزات غير المنطقية
+            if (order?.tracked_location) {
+            const dx = order.tracked_location.lat - lat;
+            const dy = order.tracked_location.lng - lng;
+            const distance = Math.sqrt(dx * dx + dy * dy) * 111000; // meters
 
-            // بث الموقع للعميل
-            io.to(orderId).emit("location-updated", { lat, lng, driverId, timestamp: Date.now() });
+            if (distance > MAX_JUMP_METERS) {
+                isReliable = false;
+            }
+            }
+
+            // 3️⃣ اختيار الموقع النهائي
+            const finalLat = isReliable ? lat : order?.tracked_location?.lat;
+            const finalLng = isReliable ? lng : order?.tracked_location?.lng;
+
+            if (finalLat == null || finalLng == null) return;
+
+            const confidence = isReliable ? 1 : 0.4;
+
+            // 4️⃣ حفظ الموقع
+            await Order.findOneAndUpdate(
+            { order_number: orderId },
+            {
+                tracked_location: {
+                lat: finalLat,
+                lng: finalLng,
+                accuracy,
+                confidence,
+                time: new Date()
+                }
+            }
+            );
+
+            // 5️⃣ بث الموقع للعميل
+            io.to(orderId).emit("location-updated", {
+            lat: finalLat,
+            lng: finalLng,
+            confidence,
+            accuracy,
+            driverId
+            });
+
+        } catch (err) {
+            console.error("Location update error:", err);
+        }
         });
+
 
         // ============================
         // 4. Driver Stops Tracking (Order Delivered)
@@ -87,7 +164,7 @@ export const initializeSocketListeners = (io) => {
                 const updatedOrder = await Order.findOneAndUpdate(
                     { order_number: orderId },
                     { 
-                        status: "Delivered",
+                        status: "delivered",
                         tracked_location: null,
                         deliveredAt: new Date(),
                     },
@@ -95,6 +172,10 @@ export const initializeSocketListeners = (io) => {
                 );
 
                 if (updatedOrder) {
+                    io.to(orderId).emit("delivery-complete", {
+                        orderId,
+                        status: updatedOrder.status
+                    });
                     console.log(`📦✅ Order ${orderId} delivered by Driver ${driverId}. Notifying customer room.`);
 
                     // تحديث availability للسائق بعد التسليم
@@ -127,7 +208,7 @@ export const initializeSocketListeners = (io) => {
         // 7. Cancel Order via Socket
         socket.on("cancel-order", async ({ orderId, cancelledBy }) => {
             try {
-                const order = await Order.findById(orderId);
+                const order = await Order.findOne({ order_number: orderId });
                 if (!order || order.status === "delivered" || order.status === "cancelled") return;
 
                 order.status = "cancelled";
