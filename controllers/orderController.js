@@ -2,6 +2,8 @@ import Order from "../models/Order.js";
 import User from "../models/User.js"; 
 import { activeDrivers } from '../socket/socketStore.js';
 import axios from 'axios';
+const cache = new Map();
+const CACHE_DURATION = 30000; 
 
 
 
@@ -21,7 +23,6 @@ export const getOrders = async (req, res) => {
   }
 };
 
-
 // ===========================
 // GET SINGLE ORDER
 // ===========================
@@ -39,20 +40,24 @@ export const getOrder = async (req, res) => {
   }
 };
 
+// ===========================
+// average date calculation helper
+// ===========================
+
 const getStartDate = (range) => {
   const now = new Date();
-  let startDate = new Date(now); // نسخ التاريخ الحالي
+  let startDate = new Date(now); 
 
   switch (range) {
     case "daily":
-      startDate.setHours(0,0,0,0);
+      startDate.setHours(0,0,0,0); // today from midnight
       break;
     case "weekly":
-      startDate.setDate(startDate.getDate() - 6); // آخر 7 أيام
+      startDate.setDate(startDate.getDate() - 6); //last 7 days
       startDate.setHours(0,0,0,0);
       break;
     case "monthly":
-      startDate.setDate(1); // بداية الشهر الحالي
+      startDate.setDate(1); // first day of month
       startDate.setHours(0,0,0,0);
       break;
     default:
@@ -61,7 +66,9 @@ const getStartDate = (range) => {
   return startDate;
 };
 
-
+// ===========================
+// GET Orders STATS
+// ===========================
 export const getOrdersByRange = async (req, res) => {
   try {
     const { range } = req.query;
@@ -86,7 +93,9 @@ export const getOrdersByRange = async (req, res) => {
   }
 };
 
-
+// ===========================
+// GET PLACES STATS
+// ===========================
 export const getPlacesStats = async (req, res) => {
   try {
     const { range } = req.query;
@@ -112,131 +121,10 @@ export const getPlacesStats = async (req, res) => {
   }
 };
 
-// ===========================
-// GET PLACES STATS
-// ===========================
-// export const getPlacesStats = async (req, res) => {
-//   try {
-//     const { range } = req.query;
-
-//     let startDate = new Date();
-
-//     if (range === "daily") {
-//       startDate.setHours(0, 0, 0, 0);
-//     } else if (range === "weekly") {
-//       startDate.setDate(startDate.getDate() - 7);
-//     } else if (range === "monthly") {
-//       startDate.setMonth(startDate.getMonth() - 1);
-//     }
-
-//     const results = await Order.aggregate([
-//       {
-//         $match: {
-//           createdAt: { $gte: startDate }
-//         }
-//       },
-//       {
-//         $group: {
-//           _id: "$customer.address",
-//           deliveries: { $sum: 1 }
-//         }
-//       },
-//       {
-//         $project: {
-//           city: "$_id",
-//           deliveries: 1,
-//           _id: 0
-//         }
-//       }
-//     ]);
-
-//     res.json(results);
-
-//   } catch (error) {
-//     console.log("❌ Stats error:", error);
-//     res.status(500).json({ error: "Failed to fetch statistics" });
-//   }
-// };
-
-
-
-
-// ===========================
-// GET Orders STATS
-// ===========================
-// export const getOrdersByRange = async (req, res) => {
-//   try {
-//     const { range } = req.query;
-
-//     let startDate = new Date();
-
-//     if (range === "daily") {
-//       startDate.setHours(0, 0, 0, 0);
-//     } 
-//     else if (range === "weekly") {
-//       startDate.setDate(startDate.getDate() - 7);
-//     } 
-//     else if (range === "monthly") {
-//       startDate.setMonth(startDate.getMonth() - 1);
-//     }
-
-//     const stats = await Order.aggregate([
-//       {
-//         $match: {
-//           createdAt: { $gte: startDate }
-//         }
-//       },
-//       {
-//         $group: {
-//           _id: {
-//             $dateToString: { format: "%Y-%m-%d", date: "$createdAt" }
-//           },
-//           orders: { $sum: 1 }
-//         }
-//       },
-//       {
-//         $sort: { _id: 1 }
-//       },
-//       {
-//         $project: {
-//           date: "$_id",
-//           orders: 1,
-//           _id: 0
-//         }
-//       }
-//     ]);
-
-//     res.json(stats);
-
-//   } catch (error) {
-//     console.error("❌ Error loading range stats:", error);
-//     res.status(500).json({ error: "Failed to load statistics" });
-//   }
-// };
-
-
 
 // ===========================
 // UPDATE ORDER
 // ===========================
-
-// export const updateOrder = async (req, res) => {
-//   try {
-//     const order = await Order.findByIdAndUpdate(
-//       req.params.id,
-//       req.body,
-//       { new: true } // return updated document
-//     ).populate("assigned_staff_id", "-password -token");
-
-//     if (!order) return res.status(404).json({ error: "Order not found" });
-
-//     res.status(200).json({ message: "Order updated successfully", order });
-//   } catch (err) {
-//     console.error("UPDATE ORDER ERROR:", err);
-//     res.status(500).json({ error: "Server error while updating order" });
-//   }
-// };
-
 export const updateOrder = async (req, res) => {
   try {
     const { status } = req.body;
@@ -338,7 +226,110 @@ export const submitOrderRating = async (req, res) => {
 };
 
 
+// =============================================
+// GET RATING by an order ( That Saved in DB) ⭐️
+// =============================================
 
+
+// =============================================
+// GET RATINGS ( That Saved in DB) ⭐️
+// =============================================
+
+
+export const getRatingsStats = async (req, res) => {
+    try {
+        const { range = "month" } = req.query;
+        const cacheKey = `ratings_${range}`;
+        
+        // 1. Check Cache first
+        const cachedData = cache.get(cacheKey);
+        if (cachedData && (Date.now() - cachedData.timestamp < CACHE_DURATION)) {
+            return res.status(200).json(cachedData.data);
+        }
+
+        const now = new Date();
+        let startDate;
+
+        switch (range) {
+            case "day":
+                startDate = new Date(now.setDate(now.getDate() - 1));
+                break;
+            case "week":
+            case "weekly":
+                startDate = new Date(now.setDate(now.getDate() - 7));
+                break;
+            case "month":
+                startDate = new Date(now.setMonth(now.getMonth() - 1));
+                break;
+            case "year":
+                startDate = new Date(now.setFullYear(now.getFullYear() - 1));
+                break;
+            default:
+                return res.status(400).json({ error: "Invalid range" });
+        }
+
+        // 2. Perform Aggregation
+        // Added index-friendly matching and specific project steps
+        const aggregation = await Order.aggregate([
+            {
+                $match: {
+                    createdAt: { $gte: startDate },
+                    rating: { $exists: true, $ne: null, $gt: 0 }
+                }
+            },
+            {
+                $group: {
+                    _id: "$rating",
+                    count: { $sum: 1 }
+                }
+            }
+        ]);
+
+        let total = 0;
+        let sum = 0;
+
+        // Default distribution (5 down to 1 for UI friendliness)
+        const distributionMap = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+
+        aggregation.forEach(item => {
+            const ratingValue = Math.round(item._id); // Ensure integer
+            if (distributionMap.hasOwnProperty(ratingValue)) {
+                distributionMap[ratingValue] = item.count;
+                total += item.count;
+                sum += ratingValue * item.count;
+            }
+        });
+
+        const average = total > 0 ? Number((sum / total).toFixed(2)) : 0;
+
+        // Format for UI
+        const distribution = [5, 4, 3, 2, 1].map(star => ({
+            star,
+            count: distributionMap[star]
+        }));
+
+        const responseData = {
+            average,
+            total,
+            distribution,
+            lastUpdated: new Date()
+        };
+
+        // 3. Save to Cache
+        cache.set(cacheKey, {
+            data: responseData,
+            timestamp: Date.now()
+        });
+
+        res.status(200).json(responseData);
+
+    } catch (err) {
+        console.error("RATING ANALYTICS ERROR:", err);
+        res.status(500).json({
+            error: "Failed to load ratings analytics"
+        });
+    }
+};
 
 
 // ===========================
